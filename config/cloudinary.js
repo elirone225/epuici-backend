@@ -57,8 +57,31 @@ const pubReportageStorage = new CloudinaryStorage({
   },
 });
 
+// Stockage des photos et messages vocaux envoyés dans les groupes.
+// Les audios (resource_type "video" chez Cloudinary) sont convertis en MP3 à
+// l'envoi : le navigateur enregistre en WebM/Opus ou MP4/AAC selon le
+// téléphone, et le MP3 se lit partout (y compris sur iPhone).
+const groupeMediaStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    if (file.mimetype.startsWith('image/')) {
+      return {
+        folder: 'epuici/groupes/photos',
+        allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+        transformation: [{ width: 1600, height: 1600, crop: 'limit', quality: 'auto' }],
+      };
+    }
+    return {
+      folder: 'epuici/groupes/audios',
+      resource_type: 'video',
+      format: 'mp3',
+    };
+  },
+});
+
 module.exports = {
   cloudinary,
+  groupeMediaStorage,
   articleStorage,
   alerteStorage,
   pubReportageStorage,

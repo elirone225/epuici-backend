@@ -5,6 +5,7 @@ const {
   pubReportageStorage,
   profilStorage,
   bannierePubStorage,
+  groupeMediaStorage,
 } = require('../config/cloudinary');
 
 const multerArticle = multer({
@@ -31,6 +32,18 @@ const multerBannierePub = multer({
   storage: bannierePubStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
 }).single('image');
+
+// Photo ou message vocal d'un groupe : un seul fichier par message
+const TYPES_MEDIA_GROUPE = /^(image\/(jpeg|png|webp|heic|heif)|audio\/.+|video\/webm)$/;
+const multerMediaGroupe = multer({
+  storage: groupeMediaStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo max (photo ou ~5 min d'audio)
+  fileFilter: (req, file, cb) => {
+    const typeMime = file.mimetype.split(';')[0];
+    if (TYPES_MEDIA_GROUPE.test(typeMime)) return cb(null, true);
+    cb(new Error(`Type de fichier non accepté : ${file.mimetype}`));
+  },
+}).single('media');
 
 // On enveloppe multer pour transformer ses erreurs (fichier trop gros, Cloudinary
 // mal configuré, etc.) en réponse JSON claire, au lieu de faire planter la requête.
@@ -106,7 +119,24 @@ const uploadImageBannierePub = (req, res, next) => {
   });
 };
 
+const uploadMediaGroupe = (req, res, next) => {
+  multerMediaGroupe(req, res, (err) => {
+    if (err) {
+      console.error('Erreur upload média groupe :', err.message);
+      return res.status(400).json({
+        message:
+          err.code === 'LIMIT_FILE_SIZE'
+            ? 'Fichier trop volumineux (10 Mo maximum).'
+            : "Erreur lors de l'envoi du fichier. Vérifiez son format.",
+        erreur: err.message,
+      });
+    }
+    next();
+  });
+};
+
 module.exports = {
+  uploadMediaGroupe,
   uploadPhotosArticle,
   uploadPhotosAlerte,
   uploadVideoPubReportage,

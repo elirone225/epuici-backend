@@ -4,6 +4,7 @@ const DemandeGroupe = require('../models/DemandeGroupe');
 const MessageGroupe = require('../models/MessageGroupe');
 const Utilisateur = require('../models/Utilisateur');
 const { envoyerNotificationsMulticast } = require('../services/notificationService');
+const { cloudinary } = require('../config/cloudinary');
 
 const contientId = (liste, id) => liste.some((element) => element.equals(id));
 
@@ -48,6 +49,62 @@ const chargerGroupePourMembre = async (req, res) => {
     return null;
   }
   return groupe;
+};
+
+// Middleware des routes de messages : vérifie l'adhésion AVANT l'envoi d'un
+// éventuel fichier vers Cloudinary, puis transmet le groupe via req.groupe.
+const exigerMembreGroupe = async (req, res, next) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    req.groupe = groupe;
+    next();
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// Les audios sont stockés en resource_type "video" chez Cloudinary
+const typeRessourceCloudinary = (typeMessage) => (typeMessage === 'audio' ? 'video' : 'image');
+
+// Supprime de Cloudinary les fichiers des messages donnés (sans bloquer en cas d'échec)
+const supprimerMedias = async (messages) => {
+  for (const typeMessage of ['photo', 'audio']) {
+    const ids = messages
+      .filter((m) => m.type === typeMessage && m.mediaPublicId)
+      .map((m) => m.mediaPublicId);
+    for (let i = 0; i < ids.length; i += 100) {
+      try {
+        await cloudinary.api.delete_resources(ids.slice(i, i + 100), {
+          resource_type: typeRessourceCloudinary(typeMessage),
+          invalidate: true, // vide aussi le cache du CDN
+        });
+      } catch (error) {
+        console.error('Erreur suppression médias Cloudinary :', error.message);
+      }
+    }
+  }
+};
+
+const apercuMessage = (message) => {
+  if (message.type === 'photo') return message.texte ? `📷 ${message.texte}` : '📷 Photo';
+  if (message.type === 'audio') return '🎤 Message vocal';
+  return message.texte;
+};
+
+const formaterMessage = (message, groupe, utilisateurId) => {
+  const auteur = message.auteur && message.auteur._id ? message.auteur : null;
+  return {
+    _id: message._id,
+    type: message.type || 'texte',
+    texte: message.texte || '',
+    mediaUrl: message.mediaUrl,
+    dureeAudio: message.dureeAudio,
+    createdAt: message.createdAt,
+    auteur: auteur ? { _id: auteur._id, nom: auteur.nom, photoProfil: auteur.photoProfil } : null,
+    estResponsable: auteur ? contientId(groupe.responsables, auteur._id) : false,
+    moi: auteur ? auteur._id.equals(utilisateurId) : false,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -175,6 +232,12 @@ const supprimerGroupe = async (req, res) => {
       return res.status(404).json({ message: 'Groupe introuvable.' });
     }
 
+    const messagesAvecMedia = await MessageGroupe.find({
+      groupe: groupe._id,
+      mediaPublicId: { $exists: true },
+    }).select('type mediaPublicId');
+    await supprimerMedias(messagesAvecMedia);
+
     await DemandeGroupe.deleteMany({ groupe: groupe._id });
     await MessageGroupe.deleteMany({ groupe: groupe._id });
     await groupe.deleteOne();
@@ -255,7 +318,7 @@ const mesGroupes = async (req, res) => {
           nbDemandesEnAttente,
           dernierMessage: dernierMessage
             ? {
-                texte: dernierMessage.texte,
+                texte: apercuMessage(dernierMessage),
                 auteurNom: dernierMessage.auteur?.nom || 'Membre',
                 createdAt: dernierMessage.createdAt,
               }
@@ -503,67 +566,71 @@ const listerMessages = async (req, res) => {
       messages.reverse();
     }
 
-    res.json(
-      messages.map((m) => ({
-        _id: m._id,
-        texte: m.texte,
-        createdAt: m.createdAt,
-        auteur: m.auteur
-          ? { _id: m.auteur._id, nom: m.auteur.nom, photoProfil: m.auteur.photoProfil }
-          : null,
-        estResponsable: m.auteur ? contientId(groupe.responsables, m.auteur._id) : false,
-        moi: m.auteur ? m.auteur._id.equals(req.user._id) : false,
-      }))
-    );
+    res.json(messages.map((m) => formaterMessage(m, groupe, req.user._id)));
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
 };
 
 // @route POST /api/groupes/:id/messages
+// Body (JSON ou multipart) : texte, et pour un média le fichier "media"
+// (photo ou vocal) avec dureeAudio en secondes pour un vocal.
+// L'adhésion est vérifiée en amont par exigerMembreGroupe (req.groupe).
 const envoyerMessage = async (req, res) => {
+  const fichier = req.file;
   try {
-    const groupe = await chargerGroupePourMembre(req, res);
-    if (!groupe) return;
-
+    const groupe = req.groupe;
     const texte = (req.body.texte || '').trim();
-    if (!texte) {
+
+    let type = 'texte';
+    if (fichier) type = fichier.mimetype.startsWith('image/') ? 'photo' : 'audio';
+
+    if (type === 'texte' && !texte) {
       return res.status(400).json({ message: 'Le message est vide.' });
     }
     if (texte.length > 2000) {
+      if (fichier) await supprimerMedias([{ type, mediaPublicId: fichier.filename }]);
       return res.status(400).json({ message: 'Message trop long (2000 caractères maximum).' });
     }
 
+    const duree = Number(req.body.dureeAudio);
     const message = await MessageGroupe.create({
       groupe: groupe._id,
       auteur: req.user._id,
-      texte,
+      type,
+      // Pas de légende sur un vocal
+      texte: type === 'audio' ? undefined : texte || undefined,
+      // Les photos HEIC (iPhone) ne s'affichent pas partout : Cloudinary les
+      // convertit en JPG si on demande l'extension .jpg
+      mediaUrl: fichier?.path?.replace(/\.(heic|heif)$/i, '.jpg'),
+      mediaPublicId: fichier?.filename,
+      dureeAudio: type === 'audio' && duree > 0 ? Math.round(duree) : undefined,
     });
 
     groupe.dernierMessageLe = message.createdAt;
     await groupe.save();
 
+    const apercu = apercuMessage(message);
     const autresMembres = groupe.membres.filter((id) => !id.equals(req.user._id));
     notifierUtilisateurs(autresMembres, {
       title: groupe.nom,
-      body: `${req.user.nom || 'Membre'} : ${texte.length > 120 ? `${texte.slice(0, 117)}...` : texte}`,
+      body: `${req.user.nom || 'Membre'} : ${apercu.length > 120 ? `${apercu.slice(0, 117)}...` : apercu}`,
       data: { type: 'message_groupe', groupeId: groupe._id.toString() },
     });
 
-    res.status(201).json({
-      _id: message._id,
-      texte: message.texte,
-      createdAt: message.createdAt,
-      auteur: { _id: req.user._id, nom: req.user.nom, photoProfil: req.user.photoProfil },
-      estResponsable: contientId(groupe.responsables, req.user._id),
-      moi: true,
-    });
+    res.status(201).json(formaterMessage({ ...message.toObject(), auteur: req.user }, groupe, req.user._id));
   } catch (error) {
+    if (fichier) {
+      supprimerMedias([
+        { type: fichier.mimetype.startsWith('image/') ? 'photo' : 'audio', mediaPublicId: fichier.filename },
+      ]);
+    }
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
 };
 
 module.exports = {
+  exigerMembreGroupe,
   groupesDeMonEglise,
   creerGroupe,
   modifierGroupe,

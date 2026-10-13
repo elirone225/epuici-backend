@@ -16,9 +16,11 @@ const {
   retirerMembre,
   listerMessages,
   envoyerMessage,
+  exigerMembreGroupe,
 } = require('../controllers/groupeController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
+const { uploadMediaGroupe } = require('../middleware/uploadMiddleware');
 
 const admin = [protect, autoriserRoles('villageadmin')];
 const fidele = [protect, autoriserRoles('utilisateur')];
@@ -42,6 +44,6 @@ router.post('/:id/quitter', ...fidele, quitterGroupe);
 router.get('/:id/demandes', ...fidele, demandesDuGroupe);
 router.delete('/:id/membres/:utilisateurId', ...fidele, retirerMembre);
 router.get('/:id/messages', ...fidele, listerMessages);
-router.post('/:id/messages', ...fidele, envoyerMessage);
+router.post('/:id/messages', ...fidele, exigerMembreGroupe, uploadMediaGroupe, envoyerMessage);
 
 module.exports = router;
