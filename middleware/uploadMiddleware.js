@@ -1,7 +1,6 @@
 const multer = require('multer');
 const {
   articleStorage,
-  immoStorage,
   alerteStorage,
   pubReportageStorage,
   profilStorage,
@@ -11,11 +10,6 @@ const {
 const multerArticle = multer({
   storage: articleStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max par photo
-}).array('photos', 3);
-
-const multerImmo = multer({
-  storage: immoStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
 }).array('photos', 3);
 
 const multerAlerte = multer({
@@ -44,20 +38,6 @@ const uploadPhotosArticle = (req, res, next) => {
   multerArticle(req, res, (err) => {
     if (err) {
       console.error('Erreur upload photos article :', err.message);
-      return res.status(400).json({
-        message:
-          "Erreur lors de l'envoi des photos. Vérifiez la configuration Cloudinary dans le .env, ou la taille/format des images.",
-        erreur: err.message,
-      });
-    }
-    next();
-  });
-};
-
-const uploadPhotosImmo = (req, res, next) => {
-  multerImmo(req, res, (err) => {
-    if (err) {
-      console.error('Erreur upload photos immo :', err.message);
       return res.status(400).json({
         message:
           "Erreur lors de l'envoi des photos. Vérifiez la configuration Cloudinary dans le .env, ou la taille/format des images.",
@@ -128,7 +108,6 @@ const uploadImageBannierePub = (req, res, next) => {
 
 module.exports = {
   uploadPhotosArticle,
-  uploadPhotosImmo,
   uploadPhotosAlerte,
   uploadVideoPubReportage,
   uploadPhotoProfil,

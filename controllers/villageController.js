@@ -1,6 +1,9 @@
 const Village = require('../models/Village');
 const VillageAdmin = require('../models/VillageAdmin');
 const Abonnement = require('../models/Abonnement');
+const Groupe = require('../models/Groupe');
+const DemandeGroupe = require('../models/DemandeGroupe');
+const MessageGroupe = require('../models/MessageGroupe');
 
 // @route POST /api/villages
 // Réservé au Super Admin
@@ -93,7 +96,8 @@ const modifierVillage = async (req, res) => {
 
 // @route DELETE /api/villages/:id
 // Réservé au Super Admin : supprime le village ainsi que son compte
-// administrateur associé et les abonnements liés, s'ils existent
+// administrateur associé, les abonnements liés et les groupes de l'église
+// (avec leurs demandes et messages), s'ils existent
 // (suppression en cascade).
 const supprimerVillage = async (req, res) => {
   try {
@@ -107,6 +111,10 @@ const supprimerVillage = async (req, res) => {
       await Abonnement.deleteMany({ villageAdmin: villageAdmin._id });
       await villageAdmin.deleteOne();
     }
+    const idsGroupes = (await Groupe.find({ village: village._id }).select('_id')).map((g) => g._id);
+    await DemandeGroupe.deleteMany({ groupe: { $in: idsGroupes } });
+    await MessageGroupe.deleteMany({ groupe: { $in: idsGroupes } });
+    await Groupe.deleteMany({ _id: { $in: idsGroupes } });
     await village.deleteOne();
 
     res.json({ message: 'Église supprimée avec succès.' });

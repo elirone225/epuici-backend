@@ -17,16 +17,6 @@ const articleStorage = new CloudinaryStorage({
   },
 });
 
-// Stockage pour les photos immo/offres
-const immoStorage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: 'epuici/immo-offres',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 1200, height: 1200, crop: 'limit', quality: 'auto' }],
-  },
-});
-
 // Stockage pour les photos jointes aux alertes des habitants
 const alerteStorage = new CloudinaryStorage({
   cloudinary,
@@ -70,7 +60,6 @@ const pubReportageStorage = new CloudinaryStorage({
 module.exports = {
   cloudinary,
   articleStorage,
-  immoStorage,
   alerteStorage,
   pubReportageStorage,
   profilStorage,

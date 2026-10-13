@@ -32,7 +32,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/villages', require('./routes/villageRoutes'));
 app.use('/api/abonnements', require('./routes/abonnementRoutes'));
 app.use('/api/articles', require('./routes/articleRoutes'));
-app.use('/api/immo-offres', require('./routes/immoRoutes'));
+app.use('/api/groupes', require('./routes/groupeRoutes'));
 app.use('/api/utilisateurs', require('./routes/utilisateurRoutes'));
 app.use('/api/alertes', require('./routes/alerteRoutes'));
 app.use('/api/pub-reportages', require('./routes/pubReportageRoutes'));

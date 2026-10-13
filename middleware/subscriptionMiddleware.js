@@ -1,4 +1,4 @@
-// À utiliser uniquement sur les routes de PUBLICATION (créer article, créer offre immo)
+// À utiliser uniquement sur les routes de PUBLICATION (créer article, créer groupe)
 // Le Village Admin peut se connecter et voir son dashboard même sans abonnement valide,
 // mais ne peut pas publier tant qu'il n'a pas payé.
 const verifierAbonnementActif = (req, res, next) => {

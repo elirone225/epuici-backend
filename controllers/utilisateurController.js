@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const Utilisateur = require('../models/Utilisateur');
 const Village = require('../models/Village');
+const Groupe = require('../models/Groupe');
+const DemandeGroupe = require('../models/DemandeGroupe');
 const generateToken = require('../utils/generateToken');
 const { envoyerCodeReinitialisation } = require('../services/emailService');
 
@@ -290,6 +292,12 @@ const supprimerUtilisateur = async (req, res) => {
       return res.status(404).json({ message: 'Utilisateur introuvable.' });
     }
 
+    // Le retire de ses groupes ; ses anciens messages restent (auteur supprimé)
+    await Groupe.updateMany(
+      { membres: utilisateur._id },
+      { $pull: { membres: utilisateur._id, responsables: utilisateur._id } }
+    );
+    await DemandeGroupe.deleteMany({ utilisateur: utilisateur._id });
     await utilisateur.deleteOne();
     res.json({ message: 'Utilisateur supprimé avec succès.' });
   } catch (error) {
