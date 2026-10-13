@@ -2,13 +2,13 @@ const { getMessaging } = require('firebase-admin/messaging');
 const appFirebase = require('../config/firebase');
 const Utilisateur = require('../models/Utilisateur');
 
-const messaging = getMessaging(appFirebase);
+const messaging = appFirebase ? getMessaging(appFirebase) : null;
 
 // FCM limite les envois multicast à 500 tokens par appel
 const TAILLE_PAQUET = 500;
 
 const envoyerNotificationsMulticast = async (tokens, { title, body, data = {} }) => {
-  if (!tokens || tokens.length === 0) return;
+  if (!messaging || !tokens || tokens.length === 0) return;
 
   const donnees = Object.fromEntries(
     Object.entries(data).map(([cle, valeur]) => [cle, String(valeur)])
