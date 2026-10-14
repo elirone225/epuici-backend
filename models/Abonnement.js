@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 
 // Les 4 formules disponibles, avec leur durée en jours
 const FORMULES = {
-  '1mois': { prix: 25000, jours: 30 },
-  '3mois': { prix: 70000, jours: 90 },
-  '6mois': { prix: 130000, jours: 180 },
-  '12mois': { prix: 250000, jours: 365 },
+  '1mois': { prix: 15000, jours: 30 },
+  '3mois': { prix: 45000, jours: 90 },
+  '6mois': { prix: 80000, jours: 180 },
+  '12mois': { prix: 150000, jours: 365 },
 };
 
 const abonnementSchema = new mongoose.Schema(
