@@ -81,11 +81,13 @@ const modifierDirect = async (req, res) => {
 };
 
 // @route POST /api/live-vod/videos
-// Réservé au Super Admin : ajoute une vidéo visible par tous les fidèles.
+// Réservé au Super Admin : ajoute une vidéo visible par tous les fidèles,
+// soit par lien (YouTube, Facebook...), soit en envoyant le fichier vidéo
+// (champ "video", stocké sur Cloudinary).
 const ajouterVideo = async (req, res) => {
   try {
     const titre = (req.body.titre || '').trim();
-    const lien = (req.body.lien || '').trim();
+    const lien = req.file ? req.file.path : (req.body.lien || '').trim();
 
     if (!titre) {
       return res.status(400).json({ message: 'Veuillez indiquer le titre de la vidéo.' });
@@ -93,7 +95,7 @@ const ajouterVideo = async (req, res) => {
     if (!estLienValide(lien)) {
       return res
         .status(400)
-        .json({ message: 'Le lien de la vidéo doit commencer par http:// ou https://' });
+        .json({ message: 'Ajoutez un fichier vidéo ou un lien commençant par http:// ou https://' });
     }
 
     const video = await VideoVod.create({ titre, lien });

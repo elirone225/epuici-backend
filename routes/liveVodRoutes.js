@@ -10,6 +10,7 @@ const {
 } = require('../controllers/liveVodController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
+const { uploadVideoPubReportage } = require('../middleware/uploadMiddleware');
 
 // Village Admin : uniquement le lien du direct de son église
 // (abonnement actif requis pour le publier, comme pour les articles)
@@ -17,7 +18,7 @@ router.get('/mon-direct', protect, autoriserRoles('villageadmin'), monDirect);
 router.put('/direct', protect, autoriserRoles('villageadmin'), verifierAbonnementActif, modifierDirect);
 
 // Super Admin : vidéos visibles par tous les fidèles
-router.post('/videos', protect, autoriserRoles('superadmin'), ajouterVideo);
+router.post('/videos', protect, autoriserRoles('superadmin'), uploadVideoPubReportage, ajouterVideo);
 router.delete('/videos/:id', protect, autoriserRoles('superadmin'), supprimerVideo);
 
 // Public (app mobile)
