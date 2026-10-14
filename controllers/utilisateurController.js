@@ -6,7 +6,6 @@ const DemandeGroupe = require('../models/DemandeGroupe');
 const generateToken = require('../utils/generateToken');
 const { envoyerCodeReinitialisation } = require('../services/emailService');
 
-const MAX_VILLAGES_SUIVIS = 5;
 const DUREE_VALIDITE_CODE_MS = 15 * 60 * 1000;
 
 const hacherCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
@@ -190,7 +189,8 @@ const modifierMonProfil = async (req, res) => {
 };
 
 // @route PUT /api/utilisateurs/suivre/:villageId
-// L'utilisateur suit un nouveau village (max 5)
+// Un fidèle ne suit qu'une seule église : suivre une église remplace celle
+// suivie jusque-là.
 const suivreVillage = async (req, res) => {
   try {
     const village = await Village.findById(req.params.villageId);
@@ -200,17 +200,7 @@ const suivreVillage = async (req, res) => {
 
     const utilisateur = await Utilisateur.findById(req.user._id);
 
-    if (utilisateur.villagesSuivis.some((id) => id.toString() === req.params.villageId)) {
-      return res.status(400).json({ message: 'Vous suivez déjà cette église.' });
-    }
-
-    if (utilisateur.villagesSuivis.length >= MAX_VILLAGES_SUIVIS) {
-      return res.status(400).json({
-        message: `Vous ne pouvez suivre que ${MAX_VILLAGES_SUIVIS} églises maximum. Retirez-en une pour en ajouter une nouvelle.`,
-      });
-    }
-
-    utilisateur.villagesSuivis.push(village._id);
+    utilisateur.villagesSuivis = [village._id];
     await utilisateur.save();
 
     const utilisateurMisAJour = await Utilisateur.findById(req.user._id).populate(
