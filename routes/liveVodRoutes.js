@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   obtenirLiveVod,
-  monLiveVod,
+  listerVideos,
+  monDirect,
   modifierDirect,
   ajouterVideo,
   supprimerVideo,
@@ -10,26 +11,17 @@ const {
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
 
-// Village Admin : gère le direct et les vidéos de son église
-// (publier exige un abonnement actif, comme pour les articles)
-router.get('/mon-village', protect, autoriserRoles('villageadmin'), monLiveVod);
-router.put(
-  '/direct',
-  protect,
-  autoriserRoles('villageadmin'),
-  verifierAbonnementActif,
-  modifierDirect
-);
-router.post(
-  '/videos',
-  protect,
-  autoriserRoles('villageadmin'),
-  verifierAbonnementActif,
-  ajouterVideo
-);
-router.delete('/videos/:id', protect, autoriserRoles('villageadmin'), supprimerVideo);
+// Village Admin : uniquement le lien du direct de son église
+// (abonnement actif requis pour le publier, comme pour les articles)
+router.get('/mon-direct', protect, autoriserRoles('villageadmin'), monDirect);
+router.put('/direct', protect, autoriserRoles('villageadmin'), verifierAbonnementActif, modifierDirect);
+
+// Super Admin : vidéos visibles par tous les fidèles
+router.post('/videos', protect, autoriserRoles('superadmin'), ajouterVideo);
+router.delete('/videos/:id', protect, autoriserRoles('superadmin'), supprimerVideo);
 
 // Public (app mobile)
+router.get('/videos', listerVideos);
 router.get('/village/:villageId', obtenirLiveVod);
 
 module.exports = router;
