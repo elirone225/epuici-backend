@@ -38,6 +38,7 @@ app.use('/api/alertes', require('./routes/alerteRoutes'));
 app.use('/api/pub-reportages', require('./routes/pubReportageRoutes'));
 app.use('/api/bannieres-pub', require('./routes/bannierePubRoutes'));
 app.use('/api/demandes-priere', require('./routes/demandePriereRoutes'));
+app.use('/api/live-vod', require('./routes/liveVodRoutes'));
 
 // Toutes les routes principales du backend sont maintenant branchées.
 

@@ -12,6 +12,13 @@ const villageSchema = new mongoose.Schema(
       enum: ['actif', 'inactif'],
       default: 'actif',
     },
+    // Direct de l'église (onglet "Live & VOD" de l'app), géré par son admin.
+    // Lien YouTube, Facebook ou vidéo directe ; "Direct terminé" est affiché
+    // tant que enCours est faux.
+    direct: {
+      lien: { type: String, trim: true, default: '' },
+      enCours: { type: Boolean, default: false },
+    },
     // Compteurs utiles pour le dashboard (mis à jour via les contrôleurs)
     nombreAbonnes: { type: Number, default: 0 },
   },
