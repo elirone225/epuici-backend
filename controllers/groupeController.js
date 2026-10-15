@@ -4,7 +4,7 @@ const DemandeGroupe = require('../models/DemandeGroupe');
 const MessageGroupe = require('../models/MessageGroupe');
 const PreferenceGroupe = require('../models/PreferenceGroupe');
 const Utilisateur = require('../models/Utilisateur');
-const { envoyerNotificationsMulticast } = require('../services/notificationService');
+const { envoyerNotificationsMulticast, accepte } = require('../services/notificationService');
 const { cloudinary } = require('../config/cloudinary');
 
 const contientId = (liste, id) => liste.some((element) => element.equals(id));
@@ -15,6 +15,7 @@ const notifierUtilisateurs = async (idsUtilisateurs, contenu) => {
     const destinataires = await Utilisateur.find({
       _id: { $in: idsUtilisateurs },
       tokenNotification: { $exists: true, $ne: null },
+      ...accepte('groupes'),
     }).select('tokenNotification');
     const tokens = destinataires.map((u) => u.tokenNotification).filter(Boolean);
     await envoyerNotificationsMulticast(tokens, contenu);

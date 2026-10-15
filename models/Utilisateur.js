@@ -26,6 +26,13 @@ const utilisateurSchema = new mongoose.Schema(
     // Empêche l'envoi de nouvelles alertes (ex: habitant qui envoie de
     // fausses alertes), sans bloquer le reste du compte.
     alertesBloquees: { type: Boolean, default: false },
+    // Notifications que le fidèle accepte de recevoir (Paramètres de l'app)
+    preferencesNotifications: {
+      publications: { type: Boolean, default: true }, // publications et événements
+      directs: { type: Boolean, default: true },
+      groupes: { type: Boolean, default: true },
+      rappels: { type: Boolean, default: true }, // rappels de l'agenda
+    },
   },
   { timestamps: true }
 );

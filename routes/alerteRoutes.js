@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  mesAlertes,
   creerAlerte,
   alertesDeMonVillage,
   changerStatutAlerte,
@@ -13,6 +14,7 @@ const { uploadPhotosAlerte } = require('../middleware/uploadMiddleware');
 
 // Habitant connecté : envoie une alerte au Village Admin du village choisi
 router.post('/', protect, autoriserRoles('utilisateur'), uploadPhotosAlerte, creerAlerte);
+router.get('/mes-alertes', protect, autoriserRoles('utilisateur'), mesAlertes);
 
 // Village Admin : voit et traite les alertes reçues pour son village
 router.get('/mon-village', protect, autoriserRoles('villageadmin'), alertesDeMonVillage);

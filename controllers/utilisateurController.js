@@ -160,6 +160,23 @@ const monProfil = async (req, res) => {
   res.json(utilisateur);
 };
 
+// @route PUT /api/utilisateurs/preferences-notifications
+// { publications?, directs?, groupes?, rappels? } : booléens
+const modifierPreferencesNotifications = async (req, res) => {
+  try {
+    const modification = {};
+    for (const categorie of ['publications', 'directs', 'groupes', 'rappels']) {
+      if (typeof req.body[categorie] === 'boolean') {
+        modification[`preferencesNotifications.${categorie}`] = req.body[categorie];
+      }
+    }
+    const utilisateur = await Utilisateur.findByIdAndUpdate(req.user._id, { $set: modification }, { new: true });
+    res.json(utilisateur.preferencesNotifications);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
 // @route PUT /api/utilisateurs/mon-profil
 const modifierMonProfil = async (req, res) => {
   try {
@@ -338,6 +355,7 @@ const enregistrerTokenNotification = async (req, res) => {
 };
 
 module.exports = {
+  modifierPreferencesNotifications,
   inscrireUtilisateur,
   connecterUtilisateur,
   demanderReinitialisationMotDePasse,

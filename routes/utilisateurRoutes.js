@@ -14,6 +14,7 @@ const {
   bloquerUtilisateur,
   supprimerUtilisateur,
   abonnesDeMonVillage,
+  modifierPreferencesNotifications,
 } = require('../controllers/utilisateurController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const { uploadPhotoProfil } = require('../middleware/uploadMiddleware');
@@ -26,6 +27,12 @@ router.post('/reinitialiser-mot-de-passe', reinitialiserMotDePasse);
 
 // Utilisateur connecté
 router.get('/mon-profil', protect, autoriserRoles('utilisateur'), monProfil);
+router.put(
+  '/preferences-notifications',
+  protect,
+  autoriserRoles('utilisateur'),
+  modifierPreferencesNotifications
+);
 router.put(
   '/mon-profil',
   protect,

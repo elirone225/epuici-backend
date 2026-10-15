@@ -1,6 +1,10 @@
 const Alerte = require('../models/Alerte');
 const Village = require('../models/Village');
 const Utilisateur = require('../models/Utilisateur');
+const { envoyerNotificationsMulticast } = require('../services/notificationService');
+
+const TYPES_ALERTE = ['deces', 'maladie', 'urgence', 'autre'];
+const LIBELLES_STATUT = { nouvelle: 'reçue', en_cours: 'prise en charge', traitee: 'traitée' };
 
 // @route POST /api/alertes
 // Réservé aux habitants connectés : signale un évènement au Village Admin
@@ -15,6 +19,7 @@ const creerAlerte = async (req, res) => {
     }
 
     const { village, description } = req.body;
+    const type = TYPES_ALERTE.includes(req.body.type) ? req.body.type : 'autre';
 
     if (!village) {
       return res.status(400).json({ message: 'Veuillez choisir une église.' });
@@ -37,6 +42,7 @@ const creerAlerte = async (req, res) => {
     const alerte = await Alerte.create({
       village,
       utilisateur: req.user._id,
+      type,
       description: description.trim(),
       photos,
     });
@@ -76,9 +82,32 @@ const changerStatutAlerte = async (req, res) => {
       return res.status(403).json({ message: 'Cette alerte ne concerne pas votre église.' });
     }
 
-    alerte.statut = alerte.statut === 'traitee' ? 'nouvelle' : 'traitee';
+    const ancienStatut = alerte.statut;
+    if (['nouvelle', 'en_cours', 'traitee'].includes(req.body.statut)) {
+      alerte.statut = req.body.statut;
+    } else {
+      // Ancien fonctionnement (bouton bascule) : nouvelle <-> traitée
+      alerte.statut = alerte.statut === 'traitee' ? 'nouvelle' : 'traitee';
+    }
+    if (typeof req.body.reponse === 'string') {
+      alerte.reponse = req.body.reponse.trim().slice(0, 1000) || undefined;
+    }
+    alerte.statutModifieLe = new Date();
     await alerte.save();
 
+    // Le fidèle suit son alerte : on le prévient du changement de statut
+    if (alerte.statut !== ancienStatut) {
+      const fidele = await Utilisateur.findById(alerte.utilisateur).select('tokenNotification');
+      if (fidele?.tokenNotification) {
+        envoyerNotificationsMulticast([fidele.tokenNotification], {
+          title: 'Suivi de votre alerte',
+          body: `Votre alerte a été ${LIBELLES_STATUT[alerte.statut]} par votre église.${alerte.reponse ? ` « ${alerte.reponse.slice(0, 80)} »` : ''}`,
+          data: { type: 'alerte', alerteId: alerte._id.toString() },
+        });
+      }
+    }
+
+    await alerte.populate('utilisateur', 'nom telephone alertesBloquees');
     res.json(alerte);
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
@@ -168,7 +197,22 @@ const bloquerEnvoiAlertesUtilisateur = async (req, res) => {
   }
 };
 
+// @route GET /api/alertes/mes-alertes
+// Fidèle : suivi de ses alertes (statut et réponse de l'église)
+const mesAlertes = async (req, res) => {
+  try {
+    const alertes = await Alerte.find({ utilisateur: req.user._id })
+      .populate('village', 'nom')
+      .sort({ createdAt: -1 })
+      .limit(100);
+    res.json(alertes);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
 module.exports = {
+  mesAlertes,
   creerAlerte,
   alertesDeMonVillage,
   changerStatutAlerte,

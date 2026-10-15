@@ -1,6 +1,6 @@
 const Evenement = require('../models/Evenement');
 const Utilisateur = require('../models/Utilisateur');
-const { envoyerNotificationsMulticast } = require('./notificationService');
+const { envoyerNotificationsMulticast, accepte } = require('./notificationService');
 
 // Agenda : export calendrier (.ics, Google Agenda) et rappels de notification
 
@@ -90,6 +90,7 @@ const envoyerRappel = async (evenement, quand) => {
     _id: { $in: ids },
     villagesSuivis: evenement.village,
     tokenNotification: { $exists: true, $ne: null },
+    ...accepte('rappels'),
   }).select('tokenNotification');
   const tokens = fideles.map((f) => f.tokenNotification).filter(Boolean);
 

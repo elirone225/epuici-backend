@@ -229,7 +229,7 @@ const creerEvenement = async (req, res) => {
         title: 'Nouvel événement',
         body: `${evenement.titre} — ${dateLocale(evenement.dateDebut)} à ${heureLocale(evenement.dateDebut)}`,
         data: { type: 'evenement', evenementId: evenement._id.toString() },
-      });
+      }, 'publications');
     }
 
     res.status(201).json(versClient(evenement));

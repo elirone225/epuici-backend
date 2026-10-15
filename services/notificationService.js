@@ -28,12 +28,18 @@ const envoyerNotificationsMulticast = async (tokens, { title, body, data = {} })
   }
 };
 
+// Filtre Mongo : fidèles qui n'ont pas coupé cette catégorie de notifications
+// (publications, directs, groupes, rappels). Absent = accepté.
+const accepte = (categorie) =>
+  categorie ? { [`preferencesNotifications.${categorie}`]: { $ne: false } } : {};
+
 // Notifie tous les habitants qui suivent le village de cet article publié
 const notifierAbonnesDuVillage = async (article) => {
   try {
     const abonnes = await Utilisateur.find({
       villagesSuivis: article.village,
       tokenNotification: { $exists: true, $ne: null },
+      ...accepte('publications'),
     }).select('tokenNotification');
 
     const tokens = abonnes.map((u) => u.tokenNotification).filter(Boolean);
@@ -52,12 +58,14 @@ const notifierAbonnesDuVillage = async (article) => {
   }
 };
 
-// Notifie tous les fidèles qui suivent l'église (ex : nouvel événement)
-const notifierFidelesDuVillage = async (villageId, message) => {
+// Notifie tous les fidèles qui suivent l'église (ex : nouvel événement),
+// sauf ceux qui ont coupé la catégorie donnée
+const notifierFidelesDuVillage = async (villageId, message, categorie) => {
   try {
     const fideles = await Utilisateur.find({
       villagesSuivis: villageId,
       tokenNotification: { $exists: true, $ne: null },
+      ...accepte(categorie),
     }).select('tokenNotification');
     await envoyerNotificationsMulticast(
       fideles.map((u) => u.tokenNotification).filter(Boolean),
@@ -68,4 +76,4 @@ const notifierFidelesDuVillage = async (villageId, message) => {
   }
 };
 
-module.exports = { envoyerNotificationsMulticast, notifierAbonnesDuVillage, notifierFidelesDuVillage };
+module.exports = { envoyerNotificationsMulticast, notifierAbonnesDuVillage, notifierFidelesDuVillage, accepte };

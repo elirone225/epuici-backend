@@ -91,7 +91,7 @@ const modifierDirect = async (req, res) => {
         title: `${avant.nom} est en direct`,
         body: 'Rejoignez le direct et le chat dans EPUICI.',
         data: { type: 'direct', villageId: String(req.user.village) },
-      });
+      }, 'directs');
     }
 
     res.json(directDuVillage(village));
