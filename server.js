@@ -53,6 +53,7 @@ app.use('/api/live-vod', require('./routes/liveVodRoutes'));
 app.use('/api/dons', require('./routes/donRoutes'));
 app.use('/api/evenements', require('./routes/evenementRoutes'));
 app.use('/api/partage', require('./routes/partageRoutes'));
+app.use('/api/notes-predication', require('./routes/notePredicationRoutes'));
 
 // Toutes les routes principales du backend sont maintenant branchées.
 
