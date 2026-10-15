@@ -81,6 +81,21 @@ const groupeMediaStorage = new CloudinaryStorage({
         transformation: [{ width: 1600, height: 1600, crop: 'limit', quality: 'auto' }],
       };
     }
+    // Pièces jointes PDF : stockées telles quelles (type "raw"), avec un nom
+    // lisible et unique qui garde l'extension .pdf pour le téléchargement
+    if (file.mimetype === 'application/pdf') {
+      const nom = (file.originalname || 'document')
+        .replace(/\.pdf$/i, '')
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '-')
+        .slice(0, 60);
+      return {
+        folder: 'epuici/groupes/documents',
+        resource_type: 'raw',
+        public_id: `${Date.now()}-${nom || 'document'}.pdf`,
+      };
+    }
     return {
       folder: 'epuici/groupes/audios',
       resource_type: 'video',

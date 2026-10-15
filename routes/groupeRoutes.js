@@ -17,6 +17,12 @@ const {
   listerMessages,
   envoyerMessage,
   exigerMembreGroupe,
+  totalNonLus,
+  marquerLu,
+  modifierPreferences,
+  creerSondage,
+  voterSondage,
+  fermerSondage,
 } = require('../controllers/groupeController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
@@ -31,6 +37,7 @@ router.post('/', ...admin, verifierAbonnementActif, creerGroupe);
 
 // Fidèles (app mobile) — routes fixes avant les routes /:id
 router.get('/mes-groupes', ...fidele, mesGroupes);
+router.get('/non-lus', ...fidele, totalNonLus);
 router.get('/eglise/:villageId', ...fidele, groupesDeLEglise);
 router.put('/demandes/:demandeId', ...fidele, traiterDemande);
 
@@ -45,5 +52,14 @@ router.get('/:id/demandes', ...fidele, demandesDuGroupe);
 router.delete('/:id/membres/:utilisateurId', ...fidele, retirerMembre);
 router.get('/:id/messages', ...fidele, listerMessages);
 router.post('/:id/messages', ...fidele, exigerMembreGroupe, uploadMediaGroupe, envoyerMessage);
+
+// Lu / non lu, épinglage, sourdine
+router.post('/:id/lu', ...fidele, marquerLu);
+router.put('/:id/preferences', ...fidele, modifierPreferences);
+
+// Sondages
+router.post('/:id/sondages', ...fidele, creerSondage);
+router.post('/:id/sondages/:messageId/vote', ...fidele, voterSondage);
+router.post('/:id/sondages/:messageId/fermer', ...fidele, fermerSondage);
 
 module.exports = router;

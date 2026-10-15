@@ -12,6 +12,12 @@ const groupeSchema = new mongoose.Schema(
     },
     nom: { type: String, required: true, trim: true },
     description: { type: String, trim: true, default: '' },
+    // Catégorie affichée dans l'onglet Découvrir de l'app
+    categorie: {
+      type: String,
+      enum: ['ministere', 'jeunesse', 'quartier', 'priere', 'louange', 'famille', 'autre'],
+      default: 'autre',
+    },
     responsables: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Utilisateur' }],
     membres: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Utilisateur' }],
     creePar: {

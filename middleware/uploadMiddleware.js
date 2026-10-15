@@ -53,8 +53,8 @@ const multerBannierePub = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 }).single('image');
 
-// Photo ou message vocal d'un groupe : un seul fichier par message
-const TYPES_MEDIA_GROUPE = /^(image\/(jpeg|png|webp|heic|heif)|audio\/.+|video\/webm)$/;
+// Photo, message vocal ou document PDF d'un groupe : un seul fichier par message
+const TYPES_MEDIA_GROUPE = /^(image\/(jpeg|png|webp|heic|heif)|audio\/.+|video\/webm|application\/pdf)$/;
 const multerMediaGroupe = multer({
   storage: groupeMediaStorage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo max (photo ou ~5 min d'audio)

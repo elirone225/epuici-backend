@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Groupe = require('../models/Groupe');
 const DemandeGroupe = require('../models/DemandeGroupe');
 const MessageGroupe = require('../models/MessageGroupe');
+const PreferenceGroupe = require('../models/PreferenceGroupe');
 const Utilisateur = require('../models/Utilisateur');
 const { envoyerNotificationsMulticast } = require('../services/notificationService');
 const { cloudinary } = require('../config/cloudinary');
@@ -64,12 +65,23 @@ const exigerMembreGroupe = async (req, res, next) => {
   }
 };
 
-// Les audios sont stockés en resource_type "video" chez Cloudinary
-const typeRessourceCloudinary = (typeMessage) => (typeMessage === 'audio' ? 'video' : 'image');
+// Les audios sont stockés en resource_type "video" chez Cloudinary, les
+// documents PDF en "raw"
+const typeRessourceCloudinary = (typeMessage) => {
+  if (typeMessage === 'audio') return 'video';
+  if (typeMessage === 'fichier') return 'raw';
+  return 'image';
+};
+
+const typeMessageDuFichier = (fichier) => {
+  if (fichier.mimetype.startsWith('image/')) return 'photo';
+  if (fichier.mimetype === 'application/pdf') return 'fichier';
+  return 'audio';
+};
 
 // Supprime de Cloudinary les fichiers des messages donnés (sans bloquer en cas d'échec)
 const supprimerMedias = async (messages) => {
-  for (const typeMessage of ['photo', 'audio']) {
+  for (const typeMessage of ['photo', 'audio', 'fichier']) {
     const ids = messages
       .filter((m) => m.type === typeMessage && m.mediaPublicId)
       .map((m) => m.mediaPublicId);
@@ -89,23 +101,72 @@ const supprimerMedias = async (messages) => {
 const apercuMessage = (message) => {
   if (message.type === 'photo') return message.texte ? `📷 ${message.texte}` : '📷 Photo';
   if (message.type === 'audio') return '🎤 Message vocal';
+  if (message.type === 'fichier') return `📄 ${message.nomFichier || 'Document PDF'}`;
+  if (message.type === 'sondage') return `📊 Sondage : ${message.sondage?.question || ''}`;
   return message.texte;
 };
 
-const formaterMessage = (message, groupe, utilisateurId) => {
-  const auteur = message.auteur && message.auteur._id ? message.auteur : null;
+// Sondage tel que vu par le membre connecté
+const formaterSondage = (sondage, auteurId, groupe, utilisateurId) => {
+  if (!sondage?.question) return undefined;
+  const votants = new Set();
+  for (const option of sondage.options) for (const v of option.votants) votants.add(String(v));
   return {
+    question: sondage.question,
+    choixMultiple: Boolean(sondage.choixMultiple),
+    ferme: Boolean(sondage.ferme),
+    nbVotants: votants.size,
+    options: sondage.options.map((o) => ({
+      texte: o.texte,
+      nbVotes: o.votants.length,
+      monChoix: contientId(o.votants, utilisateurId),
+    })),
+    // Le créateur du sondage et les responsables peuvent le clôturer
+    peutFermer:
+      Boolean(auteurId && auteurId.equals(utilisateurId)) || contientId(groupe.responsables, utilisateurId),
+  };
+};
+
+// lectures (facultatif) : [{ utilisateur, luJusquA }] des membres, pour
+// indiquer combien ont lu chacun de MES messages
+const formaterMessage = (message, groupe, utilisateurId, lectures) => {
+  const auteur = message.auteur && message.auteur._id ? message.auteur : null;
+  const moi = auteur ? auteur._id.equals(utilisateurId) : false;
+  const resultat = {
     _id: message._id,
     type: message.type || 'texte',
     texte: message.texte || '',
     mediaUrl: message.mediaUrl,
     dureeAudio: message.dureeAudio,
+    nomFichier: message.nomFichier,
+    tailleFichier: message.tailleFichier,
+    sondage: formaterSondage(message.sondage, auteur?._id, groupe, utilisateurId),
     createdAt: message.createdAt,
     auteur: auteur ? { _id: auteur._id, nom: auteur.nom, photoProfil: auteur.photoProfil } : null,
     estResponsable: auteur ? contientId(groupe.responsables, auteur._id) : false,
-    moi: auteur ? auteur._id.equals(utilisateurId) : false,
+    moi,
   };
+  if (moi && lectures) {
+    const date = new Date(message.createdAt);
+    resultat.luPar = lectures.filter(
+      (l) => !l.utilisateur.equals(utilisateurId) && contientId(groupe.membres, l.utilisateur) && l.luJusquA >= date
+    ).length;
+    resultat.nbDestinataires = Math.max(0, groupe.membres.length - 1);
+  }
+  return resultat;
 };
+
+// Messages non lus d'un membre dans un groupe (hors ses propres messages)
+const compterNonLus = (groupeId, utilisateurId, preference) =>
+  preference
+    ? MessageGroupe.countDocuments({
+        groupe: groupeId,
+        createdAt: { $gt: preference.luJusquA },
+        auteur: { $ne: utilisateurId },
+      })
+    : Promise.resolve(0);
+
+const CATEGORIES_GROUPE = ['ministere', 'jeunesse', 'quartier', 'priere', 'louange', 'famille', 'autre'];
 
 // ---------------------------------------------------------------------------
 // Admin de l'église
@@ -129,6 +190,7 @@ const groupesDeMonEglise = async (req, res) => {
         _id: g._id,
         nom: g.nom,
         description: g.description,
+        categorie: g.categorie || 'autre',
         responsables: g.responsables,
         nbMembres: g.membres.length,
         nbDemandesEnAttente: demandes[g._id.toString()] || 0,
@@ -145,7 +207,7 @@ const groupesDeMonEglise = async (req, res) => {
 // Réservé à l'admin de l'église, abonnement actif obligatoire
 const creerGroupe = async (req, res) => {
   try {
-    const { nom, description, responsables } = req.body;
+    const { nom, description, responsables, categorie } = req.body;
     if (!nom || !nom.trim()) {
       return res.status(400).json({ message: 'Le nom du groupe est obligatoire.' });
     }
@@ -161,10 +223,12 @@ const creerGroupe = async (req, res) => {
       village: req.user.village,
       nom: nom.trim(),
       description: description || '',
+      categorie: CATEGORIES_GROUPE.includes(categorie) ? categorie : 'autre',
       responsables: idsResponsables,
       membres: idsResponsables,
       creePar: req.user._id,
     });
+    await PreferenceGroupe.initialiser(groupe._id, idsResponsables);
 
     res.status(201).json(groupe);
   } catch (error) {
@@ -181,7 +245,8 @@ const modifierGroupe = async (req, res) => {
       return res.status(404).json({ message: 'Groupe introuvable.' });
     }
 
-    const { nom, description, responsables } = req.body;
+    const { nom, description, responsables, categorie } = req.body;
+    if (categorie !== undefined && CATEGORIES_GROUPE.includes(categorie)) groupe.categorie = categorie;
 
     if (nom !== undefined) {
       if (!nom.trim()) {
@@ -207,6 +272,7 @@ const modifierGroupe = async (req, res) => {
       for (const id of idsResponsables) {
         if (!contientId(groupe.membres, id)) groupe.membres.push(id);
       }
+      await PreferenceGroupe.initialiser(groupe._id, idsResponsables);
       // Ses éventuelles demandes en attente n'ont plus lieu d'être
       await DemandeGroupe.deleteMany({
         groupe: groupe._id,
@@ -240,6 +306,7 @@ const supprimerGroupe = async (req, res) => {
 
     await DemandeGroupe.deleteMany({ groupe: groupe._id });
     await MessageGroupe.deleteMany({ groupe: groupe._id });
+    await PreferenceGroupe.deleteMany({ groupe: groupe._id });
     await groupe.deleteOne();
 
     res.json({ message: 'Groupe supprimé avec succès.' });
@@ -279,6 +346,7 @@ const groupesDeLEglise = async (req, res) => {
           _id: g._id,
           nom: g.nom,
           description: g.description,
+          categorie: g.categorie || 'autre',
           nbMembres: g.membres.length,
           monStatut,
         };
@@ -296,9 +364,15 @@ const mesGroupes = async (req, res) => {
     const groupes = await Groupe.find({ membres: req.user._id })
       .populate('village', 'nom')
       .sort({ dernierMessageLe: -1, nom: 1 });
+    const preferences = await PreferenceGroupe.find({
+      utilisateur: req.user._id,
+      groupe: { $in: groupes.map((g) => g._id) },
+    });
+    const preferenceDe = (g) => preferences.find((p) => p.groupe.equals(g._id));
 
     const resultats = await Promise.all(
       groupes.map(async (g) => {
+        const preference = preferenceDe(g);
         const dernierMessage = await MessageGroupe.findOne({ groupe: g._id })
           .sort({ createdAt: -1 })
           .populate('auteur', 'nom');
@@ -316,6 +390,10 @@ const mesGroupes = async (req, res) => {
           nbMembres: g.membres.length,
           monStatut: estResponsable ? 'responsable' : 'membre',
           nbDemandesEnAttente,
+          nonLus: await compterNonLus(g._id, req.user._id, preference),
+          epingle: Boolean(preference?.epingle),
+          sourdine: Boolean(preference?.sourdine),
+          epingleLe: preference?.epingleLe || null,
           dernierMessage: dernierMessage
             ? {
                 texte: apercuMessage(dernierMessage),
@@ -327,7 +405,74 @@ const mesGroupes = async (req, res) => {
       })
     );
 
+    // Groupes épinglés en premier (le plus récemment épinglé d'abord),
+    // puis les autres par dernier message
+    resultats.sort((a, b) => {
+      if (a.epingle !== b.epingle) return a.epingle ? -1 : 1;
+      if (a.epingle) return new Date(b.epingleLe) - new Date(a.epingleLe);
+      return 0;
+    });
+
     res.json(resultats);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route GET /api/groupes/non-lus
+// Total des messages non lus (badge de l'onglet Groupes)
+const totalNonLus = async (req, res) => {
+  try {
+    const groupes = await Groupe.find({ membres: req.user._id }).select('_id');
+    const preferences = await PreferenceGroupe.find({
+      utilisateur: req.user._id,
+      groupe: { $in: groupes.map((g) => g._id) },
+    });
+    const comptes = await Promise.all(
+      preferences.map(async (p) => [String(p.groupe), await compterNonLus(p.groupe, req.user._id, p)])
+    );
+    const parGroupe = Object.fromEntries(comptes.filter(([, n]) => n > 0));
+    res.json({ total: comptes.reduce((somme, [, n]) => somme + n, 0), parGroupe });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route POST /api/groupes/:id/lu
+// Le membre a lu la discussion jusqu'à maintenant
+const marquerLu = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    await PreferenceGroupe.updateOne(
+      { groupe: groupe._id, utilisateur: req.user._id },
+      { $max: { luJusquA: new Date() } },
+      { upsert: true }
+    );
+    res.json({ message: 'Discussion lue.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route PUT /api/groupes/:id/preferences   { epingle?, sourdine? }
+const modifierPreferences = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    const modification = {};
+    if (typeof req.body.epingle === 'boolean') {
+      modification.epingle = req.body.epingle;
+      modification.epingleLe = req.body.epingle ? new Date() : null;
+    }
+    if (typeof req.body.sourdine === 'boolean') modification.sourdine = req.body.sourdine;
+
+    const preference = await PreferenceGroupe.findOneAndUpdate(
+      { groupe: groupe._id, utilisateur: req.user._id },
+      { $set: modification, $setOnInsert: { luJusquA: new Date() } },
+      { upsert: true, new: true }
+    );
+    res.json({ epingle: preference.epingle, sourdine: preference.sourdine });
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
@@ -400,6 +545,7 @@ const quitterGroupe = async (req, res) => {
 
     groupe.membres = groupe.membres.filter((id) => !id.equals(req.user._id));
     await groupe.save();
+    await PreferenceGroupe.deleteOne({ groupe: groupe._id, utilisateur: req.user._id });
     res.json({ message: 'Vous avez quitté le groupe.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
@@ -493,6 +639,7 @@ const traiterDemande = async (req, res) => {
     if (decision === 'acceptee' && !contientId(groupe.membres, demande.utilisateur)) {
       groupe.membres.push(demande.utilisateur);
       await groupe.save();
+      await PreferenceGroupe.initialiser(groupe._id, [demande.utilisateur]);
     }
 
     notifierUtilisateurs([demande.utilisateur], {
@@ -530,6 +677,7 @@ const retirerMembre = async (req, res) => {
 
     groupe.membres = groupe.membres.filter((id) => !id.equals(idMembre));
     await groupe.save();
+    await PreferenceGroupe.deleteOne({ groupe: groupe._id, utilisateur: idMembre });
     res.json({ message: 'Membre retiré du groupe.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
@@ -566,7 +714,164 @@ const listerMessages = async (req, res) => {
       messages.reverse();
     }
 
-    res.json(messages.map((m) => formaterMessage(m, groupe, req.user._id)));
+    const actualiser = String(req.query.actualiser || '')
+      .split(',')
+      .filter((id) => mongoose.isValidObjectId(id))
+      .slice(0, 50);
+    if (actualiser.length) {
+      const dejaRenvoyes = new Set(messages.map((m) => String(m._id)));
+      const aJour = await MessageGroupe.find({
+        _id: { $in: actualiser.filter((id) => !dejaRenvoyes.has(id)) },
+        groupe: groupe._id,
+      }).populate('auteur', 'nom photoProfil');
+      messages = [...messages, ...aJour];
+    }
+
+    const lectures = await PreferenceGroupe.find({ groupe: groupe._id }).select('utilisateur luJusquA');
+    res.json(messages.map((m) => formaterMessage(m, groupe, req.user._id, lectures)));
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// Après un nouveau message : date du groupe, l'auteur a tout lu, et
+// notification aux autres membres (sauf ceux qui ont mis le groupe en sourdine)
+const apresNouveauMessage = async (groupe, message, auteur) => {
+  groupe.dernierMessageLe = message.createdAt;
+  await groupe.save();
+  await PreferenceGroupe.updateOne(
+    { groupe: groupe._id, utilisateur: auteur._id },
+    { $max: { luJusquA: message.createdAt } },
+    { upsert: true }
+  );
+
+  const enSourdine = await PreferenceGroupe.find({ groupe: groupe._id, sourdine: true }).select('utilisateur');
+  const apercu = apercuMessage(message);
+  const destinataires = groupe.membres.filter(
+    (id) => !id.equals(auteur._id) && !enSourdine.some((p) => p.utilisateur.equals(id))
+  );
+  notifierUtilisateurs(destinataires, {
+    title: groupe.nom,
+    body: `${auteur.nom || 'Membre'} : ${apercu.length > 120 ? `${apercu.slice(0, 117)}...` : apercu}`,
+    data: { type: 'message_groupe', groupeId: groupe._id.toString() },
+  });
+};
+
+// --- Sondages ---
+
+// @route POST /api/groupes/:id/sondages   { question, options: [texte], choixMultiple }
+const creerSondage = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+
+    const question = String(req.body.question || '').trim();
+    const options = (Array.isArray(req.body.options) ? req.body.options : [])
+      .map((o) => String(o || '').trim())
+      .filter(Boolean);
+    if (!question) {
+      return res.status(400).json({ message: 'Posez une question.' });
+    }
+    if (question.length > 300) {
+      return res.status(400).json({ message: 'Question trop longue (300 caractères maximum).' });
+    }
+    if (options.length < 2 || options.length > 6) {
+      return res.status(400).json({ message: 'Proposez entre 2 et 6 réponses.' });
+    }
+    if (options.some((o) => o.length > 100)) {
+      return res.status(400).json({ message: 'Chaque réponse fait 100 caractères au maximum.' });
+    }
+    if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) {
+      return res.status(400).json({ message: 'Deux réponses sont identiques.' });
+    }
+
+    const message = await MessageGroupe.create({
+      groupe: groupe._id,
+      auteur: req.user._id,
+      type: 'sondage',
+      sondage: {
+        question,
+        options: options.map((texte) => ({ texte, votants: [] })),
+        choixMultiple: req.body.choixMultiple === true,
+      },
+    });
+    await apresNouveauMessage(groupe, message, req.user);
+
+    res.status(201).json(formaterMessage({ ...message.toObject(), auteur: req.user }, groupe, req.user._id, []));
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+const chargerSondage = async (req, res, groupe) => {
+  if (!mongoose.isValidObjectId(req.params.messageId)) {
+    res.status(404).json({ message: 'Sondage introuvable.' });
+    return null;
+  }
+  const message = await MessageGroupe.findOne({ _id: req.params.messageId, groupe: groupe._id, type: 'sondage' });
+  if (!message) {
+    res.status(404).json({ message: 'Sondage introuvable.' });
+    return null;
+  }
+  return message;
+};
+
+// @route POST /api/groupes/:id/sondages/:messageId/vote   { choix: [index] }
+// Remplace le vote du membre ; une liste vide retire son vote
+const voterSondage = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    const message = await chargerSondage(req, res, groupe);
+    if (!message) return;
+    if (message.sondage.ferme) {
+      return res.status(400).json({ message: 'Ce sondage est clôturé.' });
+    }
+
+    const choix = [...new Set((Array.isArray(req.body.choix) ? req.body.choix : []).map(Number))];
+    const nbOptions = message.sondage.options.length;
+    if (choix.some((i) => !Number.isInteger(i) || i < 0 || i >= nbOptions)) {
+      return res.status(400).json({ message: 'Réponse invalide.' });
+    }
+    if (!message.sondage.choixMultiple && choix.length > 1) {
+      return res.status(400).json({ message: 'Une seule réponse possible pour ce sondage.' });
+    }
+
+    // Mises à jour atomiques : les votes simultanés des autres membres sont préservés
+    await MessageGroupe.updateOne(
+      { _id: message._id },
+      { $pull: { 'sondage.options.$[].votants': req.user._id } }
+    );
+    if (choix.length) {
+      await MessageGroupe.updateOne(
+        { _id: message._id },
+        { $addToSet: Object.fromEntries(choix.map((i) => [`sondage.options.${i}.votants`, req.user._id])) }
+      );
+    }
+
+    const aJour = await MessageGroupe.findById(message._id).populate('auteur', 'nom photoProfil');
+    res.json(formaterMessage(aJour, groupe, req.user._id));
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route POST /api/groupes/:id/sondages/:messageId/fermer
+// Créateur du sondage ou responsable du groupe
+const fermerSondage = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    const message = await chargerSondage(req, res, groupe);
+    if (!message) return;
+    const autorise = message.auteur.equals(req.user._id) || contientId(groupe.responsables, req.user._id);
+    if (!autorise) {
+      return res.status(403).json({ message: 'Seul le créateur du sondage ou un responsable peut le clôturer.' });
+    }
+    message.sondage.ferme = true;
+    await message.save();
+    await message.populate('auteur', 'nom photoProfil');
+    res.json(formaterMessage(message, groupe, req.user._id));
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
@@ -583,7 +888,7 @@ const envoyerMessage = async (req, res) => {
     const texte = (req.body.texte || '').trim();
 
     let type = 'texte';
-    if (fichier) type = fichier.mimetype.startsWith('image/') ? 'photo' : 'audio';
+    if (fichier) type = typeMessageDuFichier(fichier);
 
     if (type === 'texte' && !texte) {
       return res.status(400).json({ message: 'Le message est vide.' });
@@ -600,6 +905,8 @@ const envoyerMessage = async (req, res) => {
       type,
       // Pas de légende sur un vocal
       texte: type === 'audio' ? undefined : texte || undefined,
+      nomFichier: type === 'fichier' ? (fichier.originalname || 'document.pdf').slice(0, 200) : undefined,
+      tailleFichier: type === 'fichier' ? fichier.size : undefined,
       // Les photos HEIC (iPhone) ne s'affichent pas partout : Cloudinary les
       // convertit en JPG si on demande l'extension .jpg
       mediaUrl: fichier?.path?.replace(/\.(heic|heif)$/i, '.jpg'),
@@ -607,29 +914,24 @@ const envoyerMessage = async (req, res) => {
       dureeAudio: type === 'audio' && duree > 0 ? Math.round(duree) : undefined,
     });
 
-    groupe.dernierMessageLe = message.createdAt;
-    await groupe.save();
+    await apresNouveauMessage(groupe, message, req.user);
 
-    const apercu = apercuMessage(message);
-    const autresMembres = groupe.membres.filter((id) => !id.equals(req.user._id));
-    notifierUtilisateurs(autresMembres, {
-      title: groupe.nom,
-      body: `${req.user.nom || 'Membre'} : ${apercu.length > 120 ? `${apercu.slice(0, 117)}...` : apercu}`,
-      data: { type: 'message_groupe', groupeId: groupe._id.toString() },
-    });
-
-    res.status(201).json(formaterMessage({ ...message.toObject(), auteur: req.user }, groupe, req.user._id));
+    res.status(201).json(formaterMessage({ ...message.toObject(), auteur: req.user }, groupe, req.user._id, []));
   } catch (error) {
     if (fichier) {
-      supprimerMedias([
-        { type: fichier.mimetype.startsWith('image/') ? 'photo' : 'audio', mediaPublicId: fichier.filename },
-      ]);
+      supprimerMedias([{ type: typeMessageDuFichier(fichier), mediaPublicId: fichier.filename }]);
     }
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
 };
 
 module.exports = {
+  totalNonLus,
+  marquerLu,
+  modifierPreferences,
+  creerSondage,
+  voterSondage,
+  fermerSondage,
   exigerMembreGroupe,
   groupesDeMonEglise,
   creerGroupe,
