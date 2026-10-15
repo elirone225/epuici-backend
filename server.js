@@ -12,7 +12,14 @@ connectDB().then(() => {
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// Le corps brut est conservé pour vérifier la signature des webhooks Wave
+app.use(
+  express.json({
+    verify: (req, res, tampon) => {
+      if (req.originalUrl.startsWith('/api/dons/webhook-wave')) req.rawBody = tampon;
+    },
+  })
+);
 app.use(morgan('dev'));
 
 // Empêche un JSON mal formé envoyé par erreur de faire planter le serveur
@@ -39,6 +46,7 @@ app.use('/api/pub-reportages', require('./routes/pubReportageRoutes'));
 app.use('/api/bannieres-pub', require('./routes/bannierePubRoutes'));
 app.use('/api/demandes-priere', require('./routes/demandePriereRoutes'));
 app.use('/api/live-vod', require('./routes/liveVodRoutes'));
+app.use('/api/dons', require('./routes/donRoutes'));
 
 // Toutes les routes principales du backend sont maintenant branchées.
 

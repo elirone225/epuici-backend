@@ -173,6 +173,7 @@ const supprimerAbonnement = async (req, res) => {
 };
 
 module.exports = {
+  activerAbonnement, // réutilisé par le webhook Wave commun (/api/dons/webhook-wave)
   souscrireAbonnement,
   webhookWave,
   validerPaiementManuellement,
