@@ -19,6 +19,11 @@ const villageSchema = new mongoose.Schema(
       lien: { type: String, trim: true, default: '' },
       enCours: { type: Boolean, default: false },
     },
+    // Numéro Wave de l'église, saisi par son trésorier (Paramètres) : sert
+    // au reversement des dons et dîmes. Jamais renvoyé par les routes
+    // publiques (select: false), il faut le demander explicitement.
+    numeroWave: { type: String, trim: true, select: false },
+    numeroWaveModifieLe: { type: Date, select: false },
     // Compteurs utiles pour le dashboard (mis à jour via les contrôleurs)
     nombreAbonnes: { type: Number, default: 0 },
   },

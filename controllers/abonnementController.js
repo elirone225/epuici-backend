@@ -70,6 +70,13 @@ const activerAbonnement = async (abonnement) => {
   admin.abonnementExpireLe = new Date(dateDepart.getTime() + jours * 24 * 60 * 60 * 1000);
   await admin.save();
 
+  // L'abonnement vaut pour l'église : l'autre compte (admin ou trésorier)
+  // en profite aussi
+  await VillageAdmin.updateMany(
+    { village: admin.village, _id: { $ne: admin._id } },
+    { abonnementActif: admin.abonnementActif, abonnementExpireLe: admin.abonnementExpireLe }
+  );
+
   return admin;
 };
 
@@ -130,7 +137,11 @@ const validerPaiementManuellement = async (req, res) => {
 // Le Village Admin consulte l'historique de ses paiements
 const monHistoriqueAbonnements = async (req, res) => {
   try {
-    const historique = await Abonnement.find({ villageAdmin: req.user._id }).sort({
+    // Paiements de l'église, faits par l'admin ou par le trésorier
+    const comptes = await VillageAdmin.find({ village: req.user.village }).select('_id');
+    const historique = await Abonnement.find({
+      villageAdmin: { $in: comptes.map((c) => c._id) },
+    }).sort({
       createdAt: -1,
     });
     res.json(historique);

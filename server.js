@@ -4,9 +4,11 @@ const cors = require('cors');
 const morgan = require('morgan');
 const connectDB = require('./config/db');
 const seedSuperAdmin = require('./utils/seedSuperAdmin');
+const executerMigrations = require('./utils/migrations');
 
 connectDB().then(() => {
   seedSuperAdmin();
+  executerMigrations();
 });
 
 const app = express();

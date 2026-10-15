@@ -45,6 +45,8 @@ const loginVillageAdmin = async (req, res) => {
       telephone: admin.telephone,
       village: admin.village,
       role: 'villageadmin',
+      // 'admin' ou 'tresorier' (le trésorier a aussi accès aux comptes)
+      fonction: admin.role || 'admin',
       abonnementActif: admin.abonnementEstValide(),
       abonnementExpireLe: admin.abonnementExpireLe,
       token: generateToken(admin._id, 'villageadmin'),
@@ -55,20 +57,31 @@ const loginVillageAdmin = async (req, res) => {
 };
 
 // @route POST /api/auth/villageadmin/creer
-// Réservé au Super Admin : c'est lui, et lui seul, qui crée les comptes Village Admin
+// Réservé au Super Admin : c'est lui, et lui seul, qui crée les comptes
+// d'église. role : 'admin' (par défaut) ou 'tresorier'.
 const creerVillageAdmin = async (req, res) => {
   try {
     const { nom, telephone, email, motDePasse, villageId } = req.body;
+    const role = req.body.role === 'tresorier' ? 'tresorier' : 'admin';
 
     const village = await Village.findById(villageId);
     if (!village) {
       return res.status(404).json({ message: 'Église introuvable.' });
     }
 
-    const adminExistant = await VillageAdmin.findOne({ village: villageId });
+    const adminExistant = await VillageAdmin.findOne({ village: villageId, role });
     if (adminExistant) {
-      return res.status(400).json({ message: 'Cette église a déjà un administrateur.' });
+      return res.status(400).json({
+        message:
+          role === 'tresorier'
+            ? 'Cette église a déjà un trésorier.'
+            : 'Cette église a déjà un administrateur.',
+      });
     }
+
+    // L'abonnement est celui de l'église : le nouveau compte reprend celui
+    // de l'autre compte de l'église s'il existe
+    const autreCompte = await VillageAdmin.findOne({ village: villageId });
 
     const telephoneExistant = await VillageAdmin.findOne({ telephone });
     if (telephoneExistant) {
@@ -81,6 +94,9 @@ const creerVillageAdmin = async (req, res) => {
       email,
       motDePasse,
       village: villageId,
+      role,
+      abonnementActif: autreCompte?.abonnementActif || null,
+      abonnementExpireLe: autreCompte?.abonnementExpireLe || null,
       creePar: req.user._id,
     });
 
@@ -89,7 +105,11 @@ const creerVillageAdmin = async (req, res) => {
       nom: nouvelAdmin.nom,
       telephone: nouvelAdmin.telephone,
       village: village.nom,
-      message: "Compte admin d'église créé avec succès.",
+      role,
+      message:
+        role === 'tresorier'
+          ? "Compte trésorier de l'église créé avec succès."
+          : "Compte admin d'église créé avec succès.",
     });
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });

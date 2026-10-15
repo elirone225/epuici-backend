@@ -58,4 +58,15 @@ const autoriserRoles = (...rolesAutorises) => {
   };
 };
 
-module.exports = { protect, autoriserRoles };
+// Réservé au trésorier de l'église (Dons & Dîmes, numéro Wave).
+// À placer après protect.
+const autoriserTresorier = (req, res, next) => {
+  if (req.role !== 'villageadmin' || req.user.role !== 'tresorier') {
+    return res.status(403).json({
+      message: "Accès réservé au trésorier de l'église.",
+    });
+  }
+  next();
+};
+
+module.exports = { protect, autoriserRoles, autoriserTresorier };

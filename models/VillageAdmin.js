@@ -11,7 +11,13 @@ const villageAdminSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Village',
       required: true,
-      unique: true, // garantit un seul admin par village
+    },
+    // Chaque église a deux comptes : l'admin, et le trésorier qui a accès à
+    // tout, y compris aux comptes (Dons & Dîmes) et au numéro Wave de l'église.
+    role: {
+      type: String,
+      enum: ['admin', 'tresorier'],
+      default: 'admin',
     },
     statut: {
       type: String,
@@ -33,6 +39,9 @@ const villageAdminSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Un seul admin et un seul trésorier par église
+villageAdminSchema.index({ village: 1, role: 1 }, { unique: true });
+
 villageAdminSchema.pre('save', async function (next) {
   if (!this.isModified('motDePasse')) return next();
   const salt = await bcrypt.genSalt(10);
@@ -47,6 +56,10 @@ villageAdminSchema.methods.verifierMotDePasse = async function (motDePasseSaisi)
 // Vérifie si l'admin a un abonnement valide actuellement
 villageAdminSchema.methods.abonnementEstValide = function () {
   return this.abonnementExpireLe && new Date(this.abonnementExpireLe) > new Date();
+};
+
+villageAdminSchema.methods.estTresorier = function () {
+  return this.role === 'tresorier';
 };
 
 module.exports = mongoose.model('VillageAdmin', villageAdminSchema);

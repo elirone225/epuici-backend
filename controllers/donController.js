@@ -115,9 +115,16 @@ const resultatDepuisSession = (session) => {
   return null;
 };
 
-// @route GET /api/dons/config
-// Public : catégories, montants suggérés et disponibilité du paiement Wave
-const configurationDons = (req, res) => {
+// @route GET /api/dons/config?village=<id>
+// Public : catégories, montants suggérés et disponibilité du paiement Wave.
+// Avec ?village=, indique aussi si l'église a enregistré son numéro Wave.
+const configurationDons = async (req, res) => {
+  let egliseConfiguree = null;
+  if (req.query.village && idValide(req.query.village)) {
+    const village = await Village.findById(req.query.village).select('+numeroWave').catch(() => null);
+    egliseConfiguree = Boolean(village?.numeroWave);
+  }
+
   const categories = Object.fromEntries(
     Object.entries(CATEGORIES).map(([type, liste]) => [
       type,
@@ -127,6 +134,7 @@ const configurationDons = (req, res) => {
   res.json({
     disponible: waveConfigure() || simulationActive(),
     simulation: simulationActive(),
+    egliseConfiguree,
     devise: 'XOF',
     montantMin: MONTANT_MIN,
     montantMax: MONTANT_MAX,
@@ -162,9 +170,15 @@ const creerTransaction = async (req, res) => {
         message: "Vous devez d'abord choisir votre église dans le menu.",
       });
     }
-    const village = await Village.findById(villageId).select('nom statut');
+    const village = await Village.findById(villageId).select('nom statut +numeroWave');
     if (!village || village.statut !== 'actif') {
       return res.status(400).json({ message: "Votre église n'accepte pas de paiement pour le moment." });
+    }
+    // Sans numéro Wave, l'argent ne pourrait pas être reversé à l'église
+    if (!village.numeroWave) {
+      return res.status(400).json({
+        message: "Votre église n'a pas encore enregistré son numéro Wave. Réessayez plus tard.",
+      });
     }
 
     const simulation = simulationActive();
@@ -345,8 +359,13 @@ const recuTransaction = async (req, res) => {
       return res.status(404).json({ message: 'Paiement introuvable.' });
     }
     const filtre = { _id: req.params.id };
-    if (req.role === 'utilisateur') filtre.utilisateur = req.user._id;
-    else filtre.village = req.user.village;
+    if (req.role === 'utilisateur') {
+      filtre.utilisateur = req.user._id;
+    } else if (req.user.role === 'tresorier') {
+      filtre.village = req.user.village;
+    } else {
+      return res.status(403).json({ message: "Accès réservé au trésorier de l'église." });
+    }
 
     const transaction = await TransactionDon.findOne(filtre)
       .populate('village', 'nom')
