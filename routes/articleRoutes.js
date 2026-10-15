@@ -9,6 +9,9 @@ const {
   modifierArticle,
   supprimerArticle,
   likerArticle,
+  listerCommentaires,
+  ajouterCommentaire,
+  supprimerCommentaire,
 } = require('../controllers/articleController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
@@ -37,6 +40,16 @@ router.put(
 );
 
 router.delete('/:id', protect, autoriserRoles('villageadmin'), supprimerArticle);
+
+// Commentaires des fidèles (lecture publique)
+router.delete(
+  '/commentaires/:commentaireId',
+  protect,
+  autoriserRoles('utilisateur', 'villageadmin'),
+  supprimerCommentaire
+);
+router.get('/:id/commentaires', listerCommentaires);
+router.post('/:id/commentaires', protect, autoriserRoles('utilisateur'), ajouterCommentaire);
 
 // Routes publiques (app mobile, aucune connexion requise)
 router.get('/fil', filDActualite);

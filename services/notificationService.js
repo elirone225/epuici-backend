@@ -52,4 +52,20 @@ const notifierAbonnesDuVillage = async (article) => {
   }
 };
 
-module.exports = { envoyerNotificationsMulticast, notifierAbonnesDuVillage };
+// Notifie tous les fidèles qui suivent l'église (ex : nouvel événement)
+const notifierFidelesDuVillage = async (villageId, message) => {
+  try {
+    const fideles = await Utilisateur.find({
+      villagesSuivis: villageId,
+      tokenNotification: { $exists: true, $ne: null },
+    }).select('tokenNotification');
+    await envoyerNotificationsMulticast(
+      fideles.map((u) => u.tokenNotification).filter(Boolean),
+      message
+    );
+  } catch (error) {
+    console.error('Erreur notification fidèles du village:', error.message);
+  }
+};
+
+module.exports = { envoyerNotificationsMulticast, notifierAbonnesDuVillage, notifierFidelesDuVillage };

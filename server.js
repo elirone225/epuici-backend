@@ -5,10 +5,12 @@ const morgan = require('morgan');
 const connectDB = require('./config/db');
 const seedSuperAdmin = require('./utils/seedSuperAdmin');
 const executerMigrations = require('./utils/migrations');
+const { demarrerRappelsAutomatiques } = require('./services/agendaService');
 
 connectDB().then(() => {
   seedSuperAdmin();
   executerMigrations();
+  demarrerRappelsAutomatiques();
 });
 
 const app = express();
@@ -49,6 +51,8 @@ app.use('/api/bannieres-pub', require('./routes/bannierePubRoutes'));
 app.use('/api/demandes-priere', require('./routes/demandePriereRoutes'));
 app.use('/api/live-vod', require('./routes/liveVodRoutes'));
 app.use('/api/dons', require('./routes/donRoutes'));
+app.use('/api/evenements', require('./routes/evenementRoutes'));
+app.use('/api/partage', require('./routes/partageRoutes'));
 
 // Toutes les routes principales du backend sont maintenant branchées.
 

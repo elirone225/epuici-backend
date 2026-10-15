@@ -1,0 +1,27 @@
+# Envoie les rappels de l'agenda (la veille et une heure avant chaque
+# événement) toutes les 15 minutes. Nécessaire car le serveur gratuit de
+# Render s'endort sans visite. À activer : ajouter le secret CRON_SECRET
+# (même valeur que sur Render) dans GitHub > Settings > Secrets > Actions.
+name: Rappels agenda
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  rappels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Déclencher les rappels
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Secret CRON_SECRET absent : rien à faire."
+            exit 0
+          fi
+          curl -sS --retry 3 --retry-delay 20 --max-time 90 -X POST \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            https://epuici-backend.onrender.com/api/evenements/rappels/executer

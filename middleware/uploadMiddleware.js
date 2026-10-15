@@ -1,5 +1,6 @@
 const multer = require('multer');
 const {
+  evenementStorage,
   articleStorage,
   alerteStorage,
   pubReportageStorage,
@@ -12,6 +13,25 @@ const multerArticle = multer({
   storage: articleStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max par photo
 }).array('photos', 3);
+
+const multerEvenement = multer({
+  storage: evenementStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('photo');
+
+// Affiche facultative d'un événement de l'agenda
+const uploadPhotoEvenement = (req, res, next) => {
+  multerEvenement(req, res, (err) => {
+    if (err) {
+      console.error('Erreur upload photo événement :', err.message);
+      return res.status(400).json({
+        message: "Erreur lors de l'envoi de l'affiche. Vérifiez la taille (5 Mo max) ou le format de l'image.",
+        erreur: err.message,
+      });
+    }
+    next();
+  });
+};
 
 const multerAlerte = multer({
   storage: alerteStorage,
@@ -136,6 +156,7 @@ const uploadMediaGroupe = (req, res, next) => {
 };
 
 module.exports = {
+  uploadPhotoEvenement,
   uploadMediaGroupe,
   uploadPhotosArticle,
   uploadPhotosAlerte,

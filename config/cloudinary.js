@@ -27,6 +27,16 @@ const alerteStorage = new CloudinaryStorage({
   },
 });
 
+// Stockage pour les affiches des événements de l'agenda
+const evenementStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'epuici/evenements',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 1200, height: 1200, crop: 'limit', quality: 'auto' }],
+  },
+});
+
 // Stockage pour les photos de profil des utilisateurs (habitants)
 const profilStorage = new CloudinaryStorage({
   cloudinary,
@@ -80,6 +90,7 @@ const groupeMediaStorage = new CloudinaryStorage({
 });
 
 module.exports = {
+  evenementStorage,
   cloudinary,
   groupeMediaStorage,
   articleStorage,

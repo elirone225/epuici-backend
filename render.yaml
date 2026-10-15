@@ -32,6 +32,8 @@ services:
         sync: false
       - key: WAVE_SIMULATION
         sync: false
+      - key: CRON_SECRET
+        sync: false
       - key: PWA_URL
         value: https://epuici-app.web.app
       - key: FIREBASE_SERVICE_ACCOUNT_JSON

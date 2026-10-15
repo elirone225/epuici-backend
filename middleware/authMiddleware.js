@@ -45,6 +45,23 @@ const protect = async (req, res, next) => {
   }
 };
 
+// Comme protect, mais laisse passer les visiteurs sans token (ou avec un
+// token invalide) : req.user reste alors vide. Sert aux routes publiques
+// qui personnalisent leur réponse (ex : "je participe" à un événement).
+const authFacultative = async (req, res, next) => {
+  if (!req.headers.authorization?.startsWith('Bearer')) return next();
+  try {
+    const decoded = jwt.verify(req.headers.authorization.split(' ')[1], process.env.JWT_SECRET);
+    if (decoded.role === 'utilisateur') {
+      req.user = await Utilisateur.findById(decoded.id).select('-motDePasse');
+      if (req.user) req.role = 'utilisateur';
+    }
+  } catch {
+    // token expiré ou invalide : on continue comme visiteur
+  }
+  next();
+};
+
 // Restreint l'accès à certains rôles uniquement
 // Exemple : autoriserRoles('superadmin')  ou  autoriserRoles('superadmin', 'villageadmin')
 const autoriserRoles = (...rolesAutorises) => {
@@ -69,4 +86,4 @@ const autoriserTresorier = (req, res, next) => {
   next();
 };
 
-module.exports = { protect, autoriserRoles, autoriserTresorier };
+module.exports = { protect, authFacultative, autoriserRoles, autoriserTresorier };

@@ -1,4 +1,6 @@
 const Article = require('../models/Article');
+const { filtreCategorie } = require('../models/Article');
+const ArticleCommentaire = require('../models/ArticleCommentaire');
 const { notifierAbonnesDuVillage } = require('../services/notificationService');
 
 // @route POST /api/articles
@@ -21,7 +23,7 @@ const creerArticle = async (req, res) => {
       auteur: req.user._id,
       titre,
       contenu,
-      categorie: categorie || 'actualites',
+      categorie: categorie || 'annonce',
       photos,
       statut: statut === 'publie' ? 'publie' : 'brouillon',
     });
@@ -42,8 +44,7 @@ const listerArticlesParVillage = async (req, res) => {
   try {
     const { page = 1, limite = 20, categorie } = req.query;
 
-    const filtre = { village: req.params.villageId, statut: 'publie' };
-    if (categorie) filtre.categorie = categorie;
+    const filtre = { village: req.params.villageId, statut: 'publie', ...filtreCategorie(categorie) };
 
     const articles = await Article.find(filtre)
       .sort({ createdAt: -1 })
@@ -64,7 +65,7 @@ const listerArticlesParVillage = async (req, res) => {
 // Query param : ?villages=id1,id2,id3
 const filDActualite = async (req, res) => {
   try {
-    const { villages, page = 1, limite = 20 } = req.query;
+    const { villages, page = 1, limite = 20, categorie } = req.query;
 
     if (!villages) {
       return res.status(400).json({ message: 'Veuillez fournir au moins une église.' });
@@ -72,7 +73,11 @@ const filDActualite = async (req, res) => {
 
     const idsVillages = villages.split(',');
 
-    const articles = await Article.find({ village: { $in: idsVillages }, statut: 'publie' })
+    const articles = await Article.find({
+      village: { $in: idsVillages },
+      statut: 'publie',
+      ...filtreCategorie(categorie),
+    })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limite)
       .limit(Number(limite))
@@ -122,8 +127,9 @@ const modifierArticle = async (req, res) => {
       return res.status(404).json({ message: 'Article introuvable.' });
     }
 
-    if (article.auteur.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Vous n'êtes pas l'auteur de cet article." });
+    // Admin et trésorier gèrent toutes les publications de leur église
+    if (article.village.toString() !== req.user.village.toString()) {
+      return res.status(403).json({ message: "Cet article n'appartient pas à votre église." });
     }
 
     const { titre, contenu, categorie, statut } = req.body;
@@ -161,10 +167,12 @@ const supprimerArticle = async (req, res) => {
       return res.status(404).json({ message: 'Article introuvable.' });
     }
 
-    if (article.auteur.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Vous n'êtes pas l'auteur de cet article." });
+    // Admin et trésorier gèrent toutes les publications de leur église
+    if (article.village.toString() !== req.user.village.toString()) {
+      return res.status(403).json({ message: "Cet article n'appartient pas à votre église." });
     }
 
+    await ArticleCommentaire.deleteMany({ article: article._id });
     await article.deleteOne();
     res.json({ message: 'Article supprimé avec succès.' });
   } catch (error) {
@@ -188,7 +196,92 @@ const likerArticle = async (req, res) => {
   }
 };
 
+// --- Commentaires ---
+
+// Le fidèle doit suivre l'église de la publication pour commenter
+const suitLEglise = (utilisateur, villageId) =>
+  (utilisateur.villagesSuivis || []).some((v) => v.toString() === villageId.toString());
+
+// @route GET /api/articles/:id/commentaires
+// Public : commentaires d'une publication, du plus ancien au plus récent
+const listerCommentaires = async (req, res) => {
+  try {
+    const commentaires = await ArticleCommentaire.find({ article: req.params.id })
+      .populate('auteur', 'nom photoProfil')
+      .sort({ createdAt: 1 })
+      .limit(500);
+    res.json(commentaires);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route POST /api/articles/:id/commentaires
+// Fidèle connecté, membre de l'église de la publication
+const ajouterCommentaire = async (req, res) => {
+  try {
+    const texte = (req.body.texte || '').trim();
+    if (!texte) {
+      return res.status(400).json({ message: 'Votre commentaire est vide.' });
+    }
+    if (texte.length > 1000) {
+      return res.status(400).json({ message: 'Commentaire trop long (1000 caractères maximum).' });
+    }
+
+    const article = await Article.findOne({ _id: req.params.id, statut: 'publie' });
+    if (!article) {
+      return res.status(404).json({ message: 'Publication introuvable.' });
+    }
+    if (!suitLEglise(req.user, article.village)) {
+      return res.status(403).json({ message: 'Seuls les membres de cette église peuvent commenter.' });
+    }
+
+    const commentaire = await ArticleCommentaire.create({
+      article: article._id,
+      village: article.village,
+      auteur: req.user._id,
+      texte,
+    });
+    await Article.updateOne({ _id: article._id }, { $inc: { nombreCommentaires: 1 } });
+    await commentaire.populate('auteur', 'nom photoProfil');
+
+    res.status(201).json(commentaire);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route DELETE /api/articles/commentaires/:commentaireId
+// L'auteur du commentaire, ou l'admin / le trésorier de l'église (modération)
+const supprimerCommentaire = async (req, res) => {
+  try {
+    const commentaire = await ArticleCommentaire.findById(req.params.commentaireId);
+    if (!commentaire) {
+      return res.status(404).json({ message: 'Commentaire introuvable.' });
+    }
+    const autorise =
+      req.role === 'utilisateur'
+        ? commentaire.auteur.toString() === req.user._id.toString()
+        : commentaire.village.toString() === req.user.village.toString();
+    if (!autorise) {
+      return res.status(403).json({ message: 'Vous ne pouvez pas supprimer ce commentaire.' });
+    }
+
+    await commentaire.deleteOne();
+    await Article.updateOne(
+      { _id: commentaire.article, nombreCommentaires: { $gt: 0 } },
+      { $inc: { nombreCommentaires: -1 } }
+    );
+    res.json({ message: 'Commentaire supprimé.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
 module.exports = {
+  listerCommentaires,
+  ajouterCommentaire,
+  supprimerCommentaire,
   creerArticle,
   listerArticlesParVillage,
   filDActualite,

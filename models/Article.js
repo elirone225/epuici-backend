@@ -1,5 +1,23 @@
 const mongoose = require('mongoose');
 
+// Catégories proposées aux églises. Les anciennes valeurs (héritées
+// d'Akye News) restent acceptées et sont classées dans "Annonces".
+const CATEGORIES_PUBLICATION = {
+  annonce: 'Annonce',
+  enseignement: 'Enseignement',
+  temoignage: 'Témoignage',
+};
+const ANCIENNES_CATEGORIES = [
+  'actualites',
+  'communique_officiel',
+  'alerte_urgente',
+  'avis_deces',
+  'naissance',
+  'mariage',
+  'reussite',
+  'commerce',
+];
+
 const articleSchema = new mongoose.Schema(
   {
     village: {
@@ -16,17 +34,8 @@ const articleSchema = new mongoose.Schema(
     contenu: { type: String, required: true },
     categorie: {
       type: String,
-      enum: [
-        'actualites',
-        'communique_officiel',
-        'alerte_urgente',
-        'avis_deces',
-        'naissance',
-        'mariage',
-        'reussite',
-        'commerce',
-      ],
-      default: 'actualites',
+      enum: [...Object.keys(CATEGORIES_PUBLICATION), ...ANCIENNES_CATEGORIES],
+      default: 'annonce',
     },
     photos: {
       type: [String], // URLs Cloudinary, 2 à 3 photos
@@ -42,10 +51,20 @@ const articleSchema = new mongoose.Schema(
     },
     vues: { type: Number, default: 0 },
     likes: { type: Number, default: 0 },
+    nombreCommentaires: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 articleSchema.index({ village: 1, statut: 1, createdAt: -1 });
 
+// Filtre MongoDB d'une catégorie du fil ("annonce" inclut les anciennes)
+const filtreCategorie = (categorie) => {
+  if (categorie === 'annonce') return { categorie: { $nin: ['enseignement', 'temoignage'] } };
+  if (CATEGORIES_PUBLICATION[categorie]) return { categorie };
+  return {};
+};
+
 module.exports = mongoose.model('Article', articleSchema);
+module.exports.CATEGORIES_PUBLICATION = CATEGORIES_PUBLICATION;
+module.exports.filtreCategorie = filtreCategorie;
