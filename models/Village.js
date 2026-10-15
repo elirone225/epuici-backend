@@ -18,6 +18,8 @@ const villageSchema = new mongoose.Schema(
     direct: {
       lien: { type: String, trim: true, default: '' },
       enCours: { type: Boolean, default: false },
+      // Début du direct en cours : le chat n'affiche que ses messages
+      demarreLe: { type: Date },
     },
     // Numéro Wave de l'église, saisi par son trésorier (Paramètres) : sert
     // au reversement des dons et dîmes. Jamais renvoyé par les routes

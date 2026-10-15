@@ -7,6 +7,9 @@ const {
   modifierDirect,
   ajouterVideo,
   supprimerVideo,
+  chatDirect,
+  envoyerMessageDirect,
+  supprimerMessageDirect,
 } = require('../controllers/liveVodController');
 const { protect, autoriserRoles } = require('../middleware/authMiddleware');
 const verifierAbonnementActif = require('../middleware/subscriptionMiddleware');
@@ -20,6 +23,12 @@ router.put('/direct', protect, autoriserRoles('villageadmin'), verifierAbonnemen
 // Super Admin : vidéos visibles par tous les fidèles
 router.post('/videos', protect, autoriserRoles('superadmin'), uploadVideoPubReportage, ajouterVideo);
 router.delete('/videos/:id', protect, autoriserRoles('superadmin'), supprimerVideo);
+
+// Chat en direct : fidèles de l'église et ses comptes admin
+const membresEtEglise = [protect, autoriserRoles('utilisateur', 'villageadmin')];
+router.get('/village/:villageId/chat', ...membresEtEglise, chatDirect);
+router.post('/village/:villageId/chat', ...membresEtEglise, envoyerMessageDirect);
+router.delete('/chat/:messageId', ...membresEtEglise, supprimerMessageDirect);
 
 // Public (app mobile)
 router.get('/videos', listerVideos);
