@@ -16,6 +16,7 @@ const {
   retirerMembre,
   listerMessages,
   envoyerMessage,
+  supprimerMessage,
   exigerMembreGroupe,
   totalNonLus,
   marquerLu,
@@ -54,6 +55,7 @@ router.get('/:id/messages', ...fidele, listerMessages);
 router.post('/:id/messages', ...fidele, exigerMembreGroupe, uploadMediaGroupe, envoyerMessage);
 
 // Lu / non lu, épinglage, sourdine
+router.delete('/:id/messages/:messageId', ...fidele, supprimerMessage);
 router.post('/:id/lu', ...fidele, marquerLu);
 router.put('/:id/preferences', ...fidele, modifierPreferences);
 

@@ -24,7 +24,7 @@ const messageGroupeSchema = new mongoose.Schema(
       trim: true,
       maxlength: 2000,
       required: function () {
-        return this.type === 'texte';
+        return this.type === 'texte' && !this.supprime;
       },
     },
     mediaUrl: { type: String },
@@ -47,6 +47,9 @@ const messageGroupeSchema = new mongoose.Schema(
       choixMultiple: { type: Boolean, default: false },
       ferme: { type: Boolean, default: false },
     },
+    // Supprimé par son auteur ou un responsable : le contenu est effacé,
+    // seule la mention « Ce message a été supprimé » reste
+    supprime: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -100,6 +100,7 @@ const supprimerMedias = async (messages) => {
 };
 
 const apercuMessage = (message) => {
+  if (message.supprime) return '🚫 Message supprimé';
   if (message.type === 'photo') return message.texte ? `📷 ${message.texte}` : '📷 Photo';
   if (message.type === 'audio') return '🎤 Message vocal';
   if (message.type === 'fichier') return `📄 ${message.nomFichier || 'Document PDF'}`;
@@ -142,6 +143,9 @@ const formaterMessage = (message, groupe, utilisateurId, lectures) => {
     nomFichier: message.nomFichier,
     tailleFichier: message.tailleFichier,
     sondage: formaterSondage(message.sondage, auteur?._id, groupe, utilisateurId),
+    supprime: Boolean(message.supprime),
+    // Mes messages, ou tous ceux du groupe pour un responsable
+    peutSupprimer: !message.supprime && (moi || contientId(groupe.responsables, utilisateurId)),
     createdAt: message.createdAt,
     auteur: auteur ? { _id: auteur._id, nom: auteur.nom, photoProfil: auteur.photoProfil } : null,
     estResponsable: auteur ? contientId(groupe.responsables, auteur._id) : false,
@@ -164,6 +168,7 @@ const compterNonLus = (groupeId, utilisateurId, preference) =>
         groupe: groupeId,
         createdAt: { $gt: preference.luJusquA },
         auteur: { $ne: utilisateurId },
+        supprime: { $ne: true },
       })
     : Promise.resolve(0);
 
@@ -719,6 +724,20 @@ const listerMessages = async (req, res) => {
       .split(',')
       .filter((id) => mongoose.isValidObjectId(id))
       .slice(0, 50);
+    // Rafraîchissement : messages déjà affichés supprimés depuis, pour que
+    // chacun voie disparaître leur contenu
+    if (apres) {
+      const dejaRenvoyes = new Set(messages.map((m) => String(m._id)));
+      const supprimes = await MessageGroupe.find({
+        groupe: groupe._id,
+        supprime: true,
+        updatedAt: { $gt: new Date(apres) },
+      })
+        .limit(100)
+        .populate('auteur', 'nom photoProfil');
+      messages = [...messages, ...supprimes.filter((m) => !dejaRenvoyes.has(String(m._id)))];
+    }
+
     if (actualiser.length) {
       const dejaRenvoyes = new Set(messages.map((m) => String(m._id)));
       const aJour = await MessageGroupe.find({
@@ -730,6 +749,44 @@ const listerMessages = async (req, res) => {
 
     const lectures = await PreferenceGroupe.find({ groupe: groupe._id }).select('utilisateur luJusquA');
     res.json(messages.map((m) => formaterMessage(m, groupe, req.user._id, lectures)));
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
+  }
+};
+
+// @route DELETE /api/groupes/:id/messages/:messageId
+// L'auteur supprime son message, ou un responsable n'importe quel message
+// du groupe. Le contenu et le fichier sont effacés pour tout le monde.
+const supprimerMessage = async (req, res) => {
+  try {
+    const groupe = await chargerGroupePourMembre(req, res);
+    if (!groupe) return;
+    if (!mongoose.isValidObjectId(req.params.messageId)) {
+      return res.status(404).json({ message: 'Message introuvable.' });
+    }
+    const message = await MessageGroupe.findOne({ _id: req.params.messageId, groupe: groupe._id });
+    if (!message) {
+      return res.status(404).json({ message: 'Message introuvable.' });
+    }
+    const autorise = message.auteur.equals(req.user._id) || contientId(groupe.responsables, req.user._id);
+    if (!autorise) {
+      return res.status(403).json({ message: 'Vous ne pouvez supprimer que vos propres messages.' });
+    }
+
+    if (!message.supprime) {
+      await supprimerMedias([message]);
+      message.supprime = true;
+      message.texte = undefined;
+      message.mediaUrl = undefined;
+      message.mediaPublicId = undefined;
+      message.dureeAudio = undefined;
+      message.nomFichier = undefined;
+      message.tailleFichier = undefined;
+      message.sondage = undefined;
+      await message.save();
+    }
+    await message.populate('auteur', 'nom photoProfil');
+    res.json(formaterMessage(message, groupe, req.user._id));
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur.', erreur: error.message });
   }
@@ -949,4 +1006,5 @@ module.exports = {
   retirerMembre,
   listerMessages,
   envoyerMessage,
+  supprimerMessage,
 };
