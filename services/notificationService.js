@@ -7,6 +7,35 @@ const messaging = appFirebase ? getMessaging(appFirebase) : null;
 // FCM limite les envois multicast à 500 tokens par appel
 const TAILLE_PAQUET = 500;
 
+const URL_PWA = (process.env.PWA_URL || 'https://epuici-app.web.app').replace(/\/$/, '');
+
+// Adresse ouverte quand le fidèle touche la notification sur la PWA :
+// l'app lit ?notif=<type>&<id> au démarrage et ouvre le bon écran
+const lienPwa = (donnees) => {
+  const parametres = new URLSearchParams();
+  if (donnees.type) parametres.set('notif', donnees.type);
+  for (const cle of ['articleId', 'evenementId', 'groupeId', 'alerteId', 'transactionId']) {
+    if (donnees[cle]) parametres.set(cle, donnees[cle]);
+  }
+  return `${URL_PWA}/?${parametres.toString()}`;
+};
+
+// Jetons d'appareils qui ne reçoivent plus rien (app désinstallée,
+// notifications révoquées) : on les oublie pour ne plus les viser
+const ERREURS_JETON_MORT = [
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+];
+
+const oublierJetons = async (tokens) => {
+  if (!tokens.length) return;
+  try {
+    await Utilisateur.updateMany({ tokenNotification: { $in: tokens } }, { $unset: { tokenNotification: 1 } });
+  } catch (error) {
+    console.error('Erreur nettoyage jetons FCM:', error.message);
+  }
+};
+
 const envoyerNotificationsMulticast = async (tokens, { title, body, data = {} }) => {
   if (!messaging || !tokens || tokens.length === 0) return;
 
@@ -14,14 +43,24 @@ const envoyerNotificationsMulticast = async (tokens, { title, body, data = {} })
     Object.entries(data).map(([cle, valeur]) => [cle, String(valeur)])
   );
 
-  for (let i = 0; i < tokens.length; i += TAILLE_PAQUET) {
-    const paquet = tokens.slice(i, i + TAILLE_PAQUET);
+  const uniques = [...new Set(tokens)];
+  for (let i = 0; i < uniques.length; i += TAILLE_PAQUET) {
+    const paquet = uniques.slice(i, i + TAILLE_PAQUET);
     try {
-      await messaging.sendEachForMulticast({
+      const resultat = await messaging.sendEachForMulticast({
         tokens: paquet,
         notification: { title, body },
         data: donnees,
+        webpush: {
+          notification: { icon: `${URL_PWA}/icons/Icon-192.png`, badge: `${URL_PWA}/icons/Icon-192.png` },
+          fcmOptions: { link: lienPwa(donnees) },
+        },
+        android: { priority: 'high' },
       });
+      const morts = resultat.responses
+        .map((r, index) => (!r.success && ERREURS_JETON_MORT.includes(r.error?.code) ? paquet[index] : null))
+        .filter(Boolean);
+      await oublierJetons(morts);
     } catch (error) {
       console.error('Erreur envoi notification FCM:', error.message);
     }
@@ -76,4 +115,6 @@ const notifierFidelesDuVillage = async (villageId, message, categorie) => {
   }
 };
 
-module.exports = { envoyerNotificationsMulticast, notifierAbonnesDuVillage, notifierFidelesDuVillage, accepte };
+const notificationsActives = () => Boolean(messaging);
+
+module.exports = { notificationsActives, lienPwa, envoyerNotificationsMulticast, notifierAbonnesDuVillage, notifierFidelesDuVillage, accepte };

@@ -36,7 +36,11 @@ app.use((err, req, res, next) => {
 
 // Route de test pour vérifier que le serveur tourne
 app.get('/api/health', (req, res) => {
-  res.json({ message: 'EPUICI API opérationnelle 🚀' });
+  res.json({
+    message: 'EPUICI API opérationnelle 🚀',
+    // Faux tant que FIREBASE_SERVICE_ACCOUNT_JSON n'est pas renseigné
+    notificationsPush: require('./services/notificationService').notificationsActives(),
+  });
 });
 
 app.use('/api/auth', require('./routes/authRoutes'));
